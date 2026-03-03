@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare, Zap, RefreshCcw, UserPlus, Image as ImageIcon, File as FileIcon, Tag, Plus, X, Check, CheckCheck, Filter } from 'lucide-react';
+import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare, Zap, RefreshCcw, UserPlus, Image as ImageIcon, File as FileIcon, Tag, Plus, X, Check, CheckCheck, Filter, MoreVertical, Trash2, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/AuthProvider';
-import { showSuccess, showError } from '@/utils/toast';
+import { showError, showSuccess } from '@/utils/toast';
 import ContactNotes from '@/components/ContactNotes';
 import {
   DropdownMenu,
@@ -29,6 +29,7 @@ export default function Inbox() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isBlocking, setIsBlocking] = useState(false);
   
   // Tagging State
   const [tags, setTags] = useState<string[]>(['Sales', 'Support', 'Urgent', 'Follow-up']);
@@ -167,6 +168,50 @@ export default function Inbox() {
     }
   };
 
+  const toggleBlock = async () => {
+    if (!activeChat) return;
+    setIsBlocking(true);
+    const newState = !activeChat.contacts.is_blocked;
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ is_blocked: newState })
+        .eq('id', activeChat.contacts.id);
+      
+      if (error) throw error;
+      showSuccess(newState ? 'Contact blocked' : 'Contact unblocked');
+      
+      // Update local state
+      const updatedChat = { 
+        ...activeChat, 
+        contacts: { ...activeChat.contacts, is_blocked: newState } 
+      };
+      setActiveChat(updatedChat);
+      setChats(prev => prev.map(c => c.id === activeChat.id ? updatedChat : c));
+    } catch (err) {
+      showError('Failed to update block status');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
+
+  const clearHistory = async () => {
+    if (!activeChat || !window.confirm('Are you sure you want to clear this chat history? This cannot be undone.')) return;
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('chat_id', activeChat.id)
+        .neq('sender_type', 'note');
+      
+      if (error) throw error;
+      showSuccess('Chat history cleared');
+      setMessages([]);
+    } catch (err) {
+      showError('Failed to clear history');
+    }
+  };
+
   const toggleTag = (tagName: string) => {
     if (!activeChat) return;
     const contactId = activeChat.contacts.id;
@@ -184,7 +229,7 @@ export default function Inbox() {
   };
 
   const sendSimulatedAttachment = async (type: 'image' | 'file') => {
-    if (!activeChat || !user) return;
+    if (!activeChat || !user || activeChat.contacts.is_blocked) return;
     setIsSending(true);
     try {
       let content = "";
@@ -209,7 +254,7 @@ export default function Inbox() {
   };
 
   const simulateCustomerReply = async () => {
-    if (!activeChat) return;
+    if (!activeChat || activeChat.contacts.is_blocked) return;
     try {
       const types = ['text', 'image', 'file'];
       const type = types[Math.floor(Math.random() * types.length)];
@@ -238,7 +283,7 @@ export default function Inbox() {
     fetchAgents();
     fetchQuickReplies();
 
-    const channel = supabase.channel('public-changes-v10')
+    const channel = supabase.channel('public-changes-v11')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
         if (activeChat) fetchMessages(activeChat.id);
         fetchChats();
@@ -269,7 +314,7 @@ export default function Inbox() {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !activeChat || !user) return;
+    if (!newMessage.trim() || !activeChat || !user || activeChat.contacts.is_blocked) return;
     const messageText = newMessage.trim();
     setNewMessage('');
     setIsSending(true);
@@ -437,9 +482,12 @@ export default function Inbox() {
               }`}
             >
               <div className="flex justify-between items-start mb-1">
-                <h3 className={`font-semibold text-sm truncate max-w-[140px] ${activeChat?.id === chat.id ? 'text-indigo-900 dark:text-indigo-300' : 'text-slate-800 dark:text-slate-200'}`}>
-                  {chat.contacts?.name || chat.contacts?.phone_number}
-                </h3>
+                <div className="flex items-center space-x-2 truncate">
+                  <h3 className={`font-semibold text-sm truncate max-w-[120px] ${activeChat?.id === chat.id ? 'text-indigo-900 dark:text-indigo-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                    {chat.contacts?.name || chat.contacts?.phone_number}
+                  </h3>
+                  {chat.contacts?.is_blocked && <ShieldAlert size={12} className="text-red-500 flex-shrink-0" />}
+                </div>
                 <span className="text-[10px] text-slate-400">{formatTime(chat.updated_at)}</span>
               </div>
               <div className="flex items-center justify-between mt-1">
@@ -468,7 +516,12 @@ export default function Inbox() {
                 {(activeChat.contacts?.name || '?').charAt(0).toUpperCase()}
               </div>
               <div className="flex flex-col">
-                <h2 className="font-bold text-slate-800 dark:text-white leading-tight">{activeChat.contacts?.name || 'Unknown'}</h2>
+                <div className="flex items-center space-x-2">
+                  <h2 className="font-bold text-slate-800 dark:text-white leading-tight">{activeChat.contacts?.name || 'Unknown'}</h2>
+                  {activeChat.contacts?.is_blocked && (
+                    <span className="text-[8px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase tracking-widest">Blocked</span>
+                  )}
+                </div>
                 <div className="flex items-center space-x-2">
                   <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Active</span>
                   <span className="text-slate-300 dark:text-slate-700 text-[10px]">•</span>
@@ -491,14 +544,36 @@ export default function Inbox() {
                 </div>
               </div>
             </div>
-            <button onClick={simulateCustomerReply} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all">
-              <RefreshCcw size={18} />
-            </button>
+            <div className="flex items-center space-x-2">
+              <button onClick={simulateCustomerReply} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all">
+                <RefreshCcw size={18} />
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all">
+                  <MoreVertical size={18} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48 rounded-xl border-slate-200 dark:border-slate-800 shadow-xl dark:bg-slate-900">
+                  <DropdownMenuItem onClick={toggleBlock} className={`flex items-center space-x-2 p-3 cursor-pointer dark:hover:bg-slate-800 ${activeChat.contacts.is_blocked ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {activeChat.contacts.is_blocked ? <ShieldCheck size={16} /> : <Ban size={16} />}
+                    <span className="text-sm font-medium">{activeChat.contacts.is_blocked ? 'Unblock Contact' : 'Block Contact'}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={clearHistory} className="flex items-center space-x-2 p-3 cursor-pointer dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300">
+                    <Trash2 size={16} />
+                    <span className="text-sm font-medium">Clear History</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 dark:bg-slate-900/20">
             {loadingMessages ? (
               <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin text-slate-300" size={32} /></div>
+            ) : messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2">
+                <MessageSquare size={40} className="opacity-20" />
+                <p className="text-sm italic">No messages yet. Start the conversation!</p>
+              </div>
             ) : (
               messages.map(msg => {
                 const isAgent = msg.sender_type === 'agent';
@@ -518,55 +593,69 @@ export default function Inbox() {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="p-4 bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 z-10">
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 flex items-center space-x-1 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors uppercase">
-                    <Zap size={12} />
-                    <span>Quick Replies</span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-64 rounded-xl border-slate-200 dark:border-slate-800 shadow-xl max-h-60 overflow-y-auto dark:bg-slate-900">
-                    {quickReplies.map(reply => (
-                      <DropdownMenuItem key={reply.id} onClick={() => setNewMessage(reply.content)} className="flex flex-col items-start space-y-1 p-3 cursor-pointer dark:hover:bg-slate-800">
-                        <span className="font-bold text-slate-800 dark:text-white text-xs">{reply.title}</span>
-                        <span className="text-[10px] text-slate-400 truncate w-full">{reply.content}</span>
+          {activeChat.contacts.is_blocked ? (
+            <div className="p-6 bg-red-50 dark:bg-red-900/10 border-t border-red-100 dark:border-red-900/30 flex flex-col items-center text-center space-y-2">
+              <ShieldAlert className="text-red-500" size={24} />
+              <p className="text-sm font-bold text-red-800 dark:text-red-400">This contact is blocked</p>
+              <p className="text-xs text-red-600 dark:text-red-500/70">You cannot send or receive messages from this user until they are unblocked.</p>
+              <button 
+                onClick={toggleBlock}
+                className="mt-2 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+              >
+                Unblock Now
+              </button>
+            </div>
+          ) : (
+            <div className="p-4 bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 z-10">
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 flex items-center space-x-1 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors uppercase">
+                      <Zap size={12} />
+                      <span>Quick Replies</span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-64 rounded-xl border-slate-200 dark:border-slate-800 shadow-xl max-h-60 overflow-y-auto dark:bg-slate-900">
+                      {quickReplies.map(reply => (
+                        <DropdownMenuItem key={reply.id} onClick={() => setNewMessage(reply.content)} className="flex flex-col items-start space-y-1 p-3 cursor-pointer dark:hover:bg-slate-800">
+                          <span className="font-bold text-slate-800 dark:text-white text-xs">{reply.title}</span>
+                          <span className="text-[10px] text-slate-400 truncate w-full">{reply.content}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors">
+                      <Paperclip size={16} />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="rounded-xl border-slate-200 dark:border-slate-800 shadow-xl dark:bg-slate-900">
+                      <DropdownMenuItem onClick={() => sendSimulatedAttachment('image')} className="flex items-center space-x-2 p-3 cursor-pointer dark:hover:bg-slate-800">
+                        <ImageIcon size={16} className="text-indigo-500" />
+                        <span className="text-sm font-medium dark:text-white">Send Image</span>
                       </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors">
-                    <Paperclip size={16} />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="rounded-xl border-slate-200 dark:border-slate-800 shadow-xl dark:bg-slate-900">
-                    <DropdownMenuItem onClick={() => sendSimulatedAttachment('image')} className="flex items-center space-x-2 p-3 cursor-pointer dark:hover:bg-slate-800">
-                      <ImageIcon size={16} className="text-indigo-500" />
-                      <span className="text-sm font-medium dark:text-white">Send Image</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => sendSimulatedAttachment('file')} className="flex items-center space-x-2 p-3 cursor-pointer dark:hover:bg-slate-800">
-                      <FileIcon size={16} className="text-emerald-500" />
-                      <span className="text-sm font-medium dark:text-white">Send Document</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-              <div className="flex items-end space-x-3 bg-slate-50 dark:bg-slate-900 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all shadow-sm">
-                <textarea 
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-                  placeholder="Type a message..." 
-                  className="flex-1 max-h-32 min-h-[44px] bg-transparent resize-none py-3 px-2 focus:outline-none text-sm text-slate-800 dark:text-white"
-                  rows={1}
-                />
-                <button onClick={handleSendMessage} disabled={isSending || !newMessage.trim()} className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50">
-                  {isSending ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-                </button>
+                      <DropdownMenuItem onClick={() => sendSimulatedAttachment('file')} className="flex items-center space-x-2 p-3 cursor-pointer dark:hover:bg-slate-800">
+                        <FileIcon size={16} className="text-emerald-500" />
+                        <span className="text-sm font-medium dark:text-white">Send Document</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="flex items-end space-x-3 bg-slate-50 dark:bg-slate-900 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all shadow-sm">
+                  <textarea 
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
+                    placeholder="Type a message..." 
+                    className="flex-1 max-h-32 min-h-[44px] bg-transparent resize-none py-3 px-2 focus:outline-none text-sm text-slate-800 dark:text-white"
+                    rows={1}
+                  />
+                  <button onClick={handleSendMessage} disabled={isSending || !newMessage.trim()} className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50">
+                    {isSending ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/20 text-slate-400 space-y-4">
@@ -620,6 +709,15 @@ export default function Inbox() {
                   <div className="grid grid-cols-2 gap-2">
                     <button onClick={() => updateChatStatus('resolved')} className="flex flex-col items-center py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 hover:border-green-500 hover:text-green-600 transition-all shadow-sm dark:text-white"><CheckCircle size={18} /><span className="text-[9px] font-bold uppercase mt-1">Resolve</span></button>
                     <button onClick={() => updateChatStatus('snoozed')} className="flex flex-col items-center py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 hover:border-orange-500 hover:text-orange-600 transition-all shadow-sm dark:text-white"><Clock size={18} /><span className="text-[9px] font-bold uppercase mt-1">Snooze</span></button>
+                    <button 
+                      onClick={toggleBlock} 
+                      disabled={isBlocking}
+                      className={`flex flex-col items-center py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 transition-all shadow-sm dark:text-white ${activeChat.contacts.is_blocked ? 'hover:border-emerald-500 hover:text-emerald-600' : 'hover:border-red-500 hover:text-red-600'}`}
+                    >
+                      {isBlocking ? <Loader2 className="animate-spin" size={18} /> : activeChat.contacts.is_blocked ? <ShieldCheck size={18} /> : <Ban size={18} />}
+                      <span className="text-[9px] font-bold uppercase mt-1">{activeChat.contacts.is_blocked ? 'Unblock' : 'Block'}</span>
+                    </button>
+                    <button onClick={clearHistory} className="flex flex-col items-center py-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 hover:border-slate-400 hover:text-slate-600 transition-all shadow-sm dark:text-white"><Trash2 size={18} /><span className="text-[9px] font-bold uppercase mt-1">Clear</span></button>
                   </div>
                 </div>
               </div>
