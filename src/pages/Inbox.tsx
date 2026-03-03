@@ -1,17 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Send, Paperclip, MoreVertical, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2 } from 'lucide-react';
+import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/AuthProvider';
 import { showSuccess, showError } from '@/utils/toast';
+import ContactNotes from '@/components/ContactNotes';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function Inbox() {
   const { user } = useAuth();
   
   const [chats, setChats] = useState<any[]>([]);
+  const [agents, setAgents] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChat, setActiveChat] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [rightTab, setRightTab] = useState<'info' | 'notes'>('info');
   
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -47,12 +56,18 @@ export default function Inbox() {
     }
   };
 
+  const fetchAgents = async () => {
+    const { data } = await supabase.from('profiles').select('id, first_name, last_name');
+    if (data) setAgents(data);
+  };
+
   const fetchMessages = async (chatId: string) => {
     setLoadingMessages(true);
     try {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
+        .neq('sender_type', 'note') // Hide internal notes from main chat window
         .eq('chat_id', chatId)
         .order('created_at', { ascending: true });
 
@@ -64,6 +79,28 @@ export default function Inbox() {
       showError('Failed to load messages');
     } finally {
       setLoadingMessages(false);
+    }
+  };
+
+  const handleReassign = async (agentId: string) => {
+    if (!activeChat) return;
+    try {
+      const { error } = await supabase
+        .from('chats')
+        .update({ assigned_to: agentId })
+        .eq('id', activeChat.id);
+      
+      if (error) throw error;
+      showSuccess('Conversation reassigned');
+      fetchChats();
+      // Update local active chat state
+      const agent = agents.find(a => a.id === agentId);
+      setActiveChat({
+        ...activeChat,
+        profiles: agent ? { first_name: agent.first_name, last_name: agent.last_name } : null
+      });
+    } catch (err) {
+      showError('Failed to reassign');
     }
   };
 
@@ -81,8 +118,9 @@ export default function Inbox() {
 
   useEffect(() => {
     fetchChats();
+    fetchAgents();
 
-    const channel = supabase.channel('public-changes')
+    const channel = supabase.channel('public-changes-v2')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
         if (activeChat) fetchMessages(activeChat.id);
         fetchChats();
@@ -227,34 +265,15 @@ export default function Inbox() {
     const term = searchQuery.toLowerCase();
     const nameMatch = chat.contacts?.name?.toLowerCase().includes(term);
     const phoneMatch = chat.contacts?.phone_number?.toLowerCase().includes(term);
-    return nameMatch || phoneMatch;
+    return (nameMatch || phoneMatch) && chat.status === 'open'; // Default view: Open only
   });
+
+  const snoozedChatsCount = chats.filter(c => c.status === 'snoozed').length;
 
   if (loadingChats) {
     return (
       <div className="flex-1 flex items-center justify-center bg-white rounded-l-3xl shadow-sm border-y border-l border-slate-200 my-2">
         <Loader2 className="animate-spin text-indigo-600" size={40} />
-      </div>
-    );
-  }
-
-  if (chats.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-l-3xl shadow-sm border-y border-l border-slate-200 my-2 p-8 text-center">
-        <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center mb-6 text-indigo-300">
-          <MessageSquarePlus size={48} />
-        </div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">No active chats</h2>
-        <p className="text-slate-500 mb-8 max-w-md">
-          You're all caught up! When new messages arrive, they will appear here.
-        </p>
-        <button 
-          onClick={seedDemoData}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-xl transition-all shadow-md shadow-indigo-200 flex items-center space-x-2"
-        >
-          <MessageSquarePlus size={20} />
-          <span>Generate Demo Chat</span>
-        </button>
       </div>
     );
   }
@@ -266,16 +285,24 @@ export default function Inbox() {
       <div className="w-80 flex flex-col border-r border-slate-100 bg-slate-50/50">
         <div className="p-4 border-b border-slate-100 flex justify-between items-center">
           <h2 className="text-xl font-bold text-slate-800">Inbox</h2>
-          <button onClick={seedDemoData} className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md hover:bg-indigo-100">
-            + Demo
-          </button>
+          <div className="flex items-center space-x-2">
+            {snoozedChatsCount > 0 && (
+              <span className="text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold flex items-center space-x-1">
+                <Clock size={10} />
+                <span>{snoozedChatsCount} Snoozed</span>
+              </span>
+            )}
+            <button onClick={seedDemoData} className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md hover:bg-indigo-100">
+              + Demo
+            </button>
+          </div>
         </div>
         <div className="p-4 border-b border-slate-100">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text" 
-              placeholder="Search chats..." 
+              placeholder="Search open chats..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
@@ -285,7 +312,12 @@ export default function Inbox() {
         
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {filteredChats.length === 0 ? (
-            <div className="p-4 text-center text-sm text-slate-500">No chats found for "{searchQuery}"</div>
+            <div className="p-8 text-center">
+              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-300">
+                <CheckCircle size={24} />
+              </div>
+              <p className="text-sm text-slate-500">Inbox cleared!</p>
+            </div>
           ) : (
             filteredChats.map(chat => (
               <div 
@@ -293,7 +325,7 @@ export default function Inbox() {
                 onClick={() => setActiveChat(chat)}
                 className={`p-3 rounded-2xl cursor-pointer transition-all ${
                   activeChat?.id === chat.id 
-                    ? 'bg-indigo-50 border border-indigo-100 shadow-sm' 
+                    ? 'bg-white border border-indigo-100 shadow-md ring-1 ring-indigo-50' 
                     : 'hover:bg-slate-100 border border-transparent'
                 }`}
               >
@@ -304,14 +336,11 @@ export default function Inbox() {
                   <span className="text-xs text-slate-400">{formatTime(chat.updated_at)}</span>
                 </div>
                 <div className="flex items-center justify-between mt-2">
-                  <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full ${
-                    chat.status === 'open' ? 'text-green-600 bg-green-100' : 
-                    chat.status === 'resolved' ? 'text-slate-400 bg-slate-100' : 'text-orange-600 bg-orange-100'
-                  }`}>
-                    {chat.status}
+                  <span className="text-[10px] text-slate-400 truncate max-w-[120px]">
+                    Assigned to {chat.profiles?.first_name || 'Unassigned'}
                   </span>
                   {chat.unread_count > 0 && (
-                    <span className="bg-indigo-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full">
+                    <span className="bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                       {chat.unread_count}
                     </span>
                   )}
@@ -332,7 +361,10 @@ export default function Inbox() {
               </div>
               <div>
                 <h2 className="font-bold text-slate-800">{activeChat.contacts?.name || 'Unknown Contact'}</h2>
-                <p className="text-xs text-slate-500">{activeChat.contacts?.phone_number}</p>
+                <div className="flex items-center space-x-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Online via WhatsApp</p>
+                </div>
               </div>
             </div>
           </div>
@@ -417,84 +449,123 @@ export default function Inbox() {
         </div>
       )}
 
-      {/* COLUMN 3: Contact Info & Actions */}
+      {/* COLUMN 3: Right Sidebar (Tabs: Info / Notes) */}
       {activeChat && (
-        <div className="w-72 bg-slate-50/50 border-l border-slate-100 flex flex-col z-10 shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.02)]">
-          <div className="p-6 border-b border-slate-100 flex flex-col items-center text-center">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white text-3xl font-bold shadow-md mb-4">
-              {(activeChat.contacts?.name || '?').charAt(0).toUpperCase()}
-            </div>
-            <h2 className="text-lg font-bold text-slate-800">{activeChat.contacts?.name || 'Unknown'}</h2>
-            <p className="text-slate-500 text-sm mb-4">{activeChat.contacts?.phone_number}</p>
-            
-            <div className="flex flex-wrap justify-center gap-2 w-full">
-              <span className="inline-flex items-center space-x-1 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm border border-green-200">
-                <CheckCircle size={14} />
-                <span>WhatsApp Active</span>
-              </span>
-            </div>
+        <div className="w-80 bg-slate-50/50 border-l border-slate-100 flex flex-col z-10 shadow-[-4px_0_15px_-3px_rgba(0,0,0,0.02)] overflow-hidden">
+          
+          <div className="flex border-b border-slate-100">
+            <button 
+              onClick={() => setRightTab('info')}
+              className={`flex-1 py-4 text-xs font-bold uppercase tracking-wider flex items-center justify-center space-x-2 transition-colors ${
+                rightTab === 'info' ? 'bg-white text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <MessageSquare size={14} />
+              <span>Contact Info</span>
+            </button>
+            <button 
+              onClick={() => setRightTab('notes')}
+              className={`flex-1 py-4 text-xs font-bold uppercase tracking-wider flex items-center justify-center space-x-2 transition-colors ${
+                rightTab === 'notes' ? 'bg-white text-amber-600 border-b-2 border-amber-600' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <StickyNote size={14} />
+              <span>Internal Notes</span>
+            </button>
           </div>
 
-          <div className="p-6 space-y-6 flex-1 overflow-y-auto">
-            {/* Status Controls */}
-            <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Conversation Status</h3>
-              <div className="grid grid-cols-2 gap-2">
-                <button 
-                  onClick={() => updateChatStatus('resolved')}
-                  className="flex flex-col items-center justify-center py-3 border rounded-xl transition-colors shadow-sm bg-white border-slate-200 text-slate-600 hover:border-green-500 hover:text-green-600"
-                >
-                  <CheckCircle size={20} className="mb-1" />
-                  <span className="text-xs font-semibold">Resolve</span>
-                </button>
-                <button 
-                  onClick={() => updateChatStatus('snoozed')}
-                  disabled={activeChat.status === 'snoozed'}
-                  className={`flex flex-col items-center justify-center py-3 border rounded-xl transition-colors shadow-sm ${
-                    activeChat.status === 'snoozed' 
-                      ? 'bg-orange-50 border-orange-200 text-orange-600' 
-                      : 'bg-white border-slate-200 text-slate-600 hover:border-orange-500 hover:text-orange-600'
-                  }`}
-                >
-                  <Clock size={20} className="mb-1" />
-                  <span className="text-xs font-semibold">Snooze</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Assignment */}
-            <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Assignment</h3>
-              <button className="w-full flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl hover:border-indigo-500 transition-colors shadow-sm">
-                <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs uppercase">
-                    {activeChat.profiles?.first_name?.charAt(0) || 'U'}
+          <div className="p-6 flex-1 overflow-y-auto">
+            {rightTab === 'info' ? (
+              <div className="space-y-8">
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white text-3xl font-bold shadow-md mb-4">
+                    {(activeChat.contacts?.name || '?').charAt(0).toUpperCase()}
                   </div>
-                  <div className="text-left">
-                    <p className="text-sm font-semibold text-slate-800">
-                      {activeChat.profiles ? `${activeChat.profiles.first_name} ${activeChat.profiles.last_name || ''}` : 'Unassigned'}
-                    </p>
-                    <p className="text-[10px] text-slate-500">Currently Assigned</p>
+                  <h2 className="text-lg font-bold text-slate-800">{activeChat.contacts?.name || 'Unknown'}</h2>
+                  <p className="text-slate-500 text-sm">{activeChat.contacts?.phone_number}</p>
+                </div>
+
+                {/* Re-assignment Dropdown */}
+                <div>
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Assigned Agent</h3>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="w-full flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl hover:border-indigo-500 transition-colors shadow-sm text-left">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs uppercase">
+                          {activeChat.profiles?.first_name?.charAt(0) || 'U'}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">
+                            {activeChat.profiles ? `${activeChat.profiles.first_name} ${activeChat.profiles.last_name || ''}` : 'Unassigned'}
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronDown size={16} className="text-slate-400" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64 rounded-xl border-slate-200 shadow-xl p-1">
+                      {agents.map(agent => (
+                        <DropdownMenuItem 
+                          key={agent.id}
+                          onClick={() => handleReassign(agent.id)}
+                          className="flex items-center space-x-3 p-2 cursor-pointer hover:bg-indigo-50 rounded-lg"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-bold uppercase">
+                            {agent.first_name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">{agent.first_name} {agent.last_name}</p>
+                          </div>
+                          {activeChat.assigned_to === agent.id && <UserCheck size={14} className="ml-auto text-indigo-600" />}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Status Controls */}
+                <div>
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Conversation Status</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button 
+                      onClick={() => updateChatStatus('resolved')}
+                      className="flex flex-col items-center justify-center py-3 border rounded-xl transition-colors shadow-sm bg-white border-slate-200 text-slate-600 hover:border-green-500 hover:text-green-600 hover:bg-green-50"
+                    >
+                      <CheckCircle size={20} className="mb-1" />
+                      <span className="text-[10px] font-bold uppercase">Resolve</span>
+                    </button>
+                    <button 
+                      onClick={() => updateChatStatus('snoozed')}
+                      disabled={activeChat.status === 'snoozed'}
+                      className={`flex flex-col items-center justify-center py-3 border rounded-xl transition-colors shadow-sm ${
+                        activeChat.status === 'snoozed' 
+                          ? 'bg-orange-50 border-orange-200 text-orange-600' 
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-orange-500 hover:text-orange-600 hover:bg-orange-50'
+                      }`}
+                    >
+                      <Clock size={20} className="mb-1" />
+                      <span className="text-[10px] font-bold uppercase">Snooze</span>
+                    </button>
                   </div>
                 </div>
-                <UserCheck size={16} className="text-slate-400" />
-              </button>
-            </div>
-            
-            {/* Danger Zone */}
-            <div className="pt-6 border-t border-slate-200">
-              <button 
-                onClick={toggleBlockStatus}
-                className={`w-full flex items-center justify-center space-x-2 py-3 rounded-xl transition-colors text-sm font-bold ${
-                  activeChat.contacts?.is_blocked
-                    ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    : 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-100'
-                }`}
-              >
-                <Ban size={16} />
-                <span>{activeChat.contacts?.is_blocked ? 'Unblock Contact' : 'Block Contact'}</span>
-              </button>
-            </div>
+                
+                {/* Danger Zone */}
+                <div className="pt-6 border-t border-slate-200">
+                  <button 
+                    onClick={toggleBlockStatus}
+                    className={`w-full flex items-center justify-center space-x-2 py-3 rounded-xl transition-colors text-[10px] font-bold uppercase tracking-wider ${
+                      activeChat.contacts?.is_blocked
+                        ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        : 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-100'
+                    }`}
+                  >
+                    <Ban size={16} />
+                    <span>{activeChat.contacts?.is_blocked ? 'Unblock Contact' : 'Block Contact'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <ContactNotes contactId={activeChat.id} />
+            )}
           </div>
         </div>
       )}
