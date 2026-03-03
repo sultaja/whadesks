@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare, Zap, RefreshCcw, UserPlus, Image as ImageIcon, File as FileIcon } from 'lucide-react';
+import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare, Zap, RefreshCcw, UserPlus, Image as ImageIcon, File as FileIcon, Tag, Plus, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/AuthProvider';
 import { showSuccess, showError } from '@/utils/toast';
@@ -29,6 +29,12 @@ export default function Inbox() {
   const [isSending, setIsSending] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   
+  // New Chat Modal State
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [newChatPhone, setNewChatPhone] = useState('');
+  const [newChatName, setNewChatName] = useState('');
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const fetchChats = async () => {
@@ -91,6 +97,54 @@ export default function Inbox() {
     }
   };
 
+  const handleCreateChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newChatPhone.trim() || !user) return;
+    
+    setIsCreatingChat(true);
+    try {
+      // 1. Create or find contact
+      const { data: contact, error: contactError } = await supabase
+        .from('contacts')
+        .upsert({ 
+          phone_number: newChatPhone, 
+          name: newChatName || 'New Customer' 
+        }, { onConflict: 'phone_number' })
+        .select()
+        .single();
+
+      if (contactError) throw contactError;
+
+      // 2. Create chat
+      const { data: chat, error: chatError } = await supabase
+        .from('chats')
+        .insert({ 
+          contact_id: contact.id, 
+          assigned_to: user.id,
+          status: 'open'
+        })
+        .select(`
+          id, status, unread_count, updated_at, assigned_to,
+          contacts (id, name, phone_number, is_blocked),
+          profiles (id, first_name, last_name)
+        `)
+        .single();
+
+      if (chatError) throw chatError;
+
+      showSuccess('Conversation started');
+      setIsNewChatModalOpen(false);
+      setNewChatPhone('');
+      setNewChatName('');
+      fetchChats();
+      setActiveChat(chat);
+    } catch (err: any) {
+      showError('Failed to start conversation');
+    } finally {
+      setIsCreatingChat(false);
+    }
+  };
+
   const assignAgent = async (agentId: string) => {
     if (!activeChat) return;
     setIsAssigning(true);
@@ -142,7 +196,7 @@ export default function Inbox() {
     fetchAgents();
     fetchQuickReplies();
 
-    const channel = supabase.channel('public-changes-v7')
+    const channel = supabase.channel('public-changes-v8')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
         if (activeChat) fetchMessages(activeChat.id);
         fetchChats();
@@ -259,22 +313,29 @@ export default function Inbox() {
       <div className="w-80 flex flex-col border-r border-slate-100 bg-slate-50/50">
         <div className="p-4 border-b border-slate-100 flex justify-between items-center">
           <h2 className="text-xl font-bold text-slate-800">Inbox</h2>
+          <button 
+            onClick={() => setIsNewChatModalOpen(true)}
+            className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-sm"
+            title="New Conversation"
+          >
+            <MessageSquarePlus size={18} />
+          </button>
+        </div>
+        <div className="p-4 border-b border-slate-100 space-y-3">
           <div className="flex bg-slate-200 p-1 rounded-lg">
             <button 
               onClick={() => setInboxFilter('mine')}
-              className={`text-[10px] font-bold px-2 py-1 rounded-md transition-all ${inboxFilter === 'mine' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex-1 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all ${inboxFilter === 'mine' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Mine
             </button>
             <button 
               onClick={() => setInboxFilter('all')}
-              className={`text-[10px] font-bold px-2 py-1 rounded-md transition-all ${inboxFilter === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`flex-1 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all ${inboxFilter === 'all' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               All
             </button>
           </div>
-        </div>
-        <div className="p-4 border-b border-slate-100">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
@@ -431,6 +492,18 @@ export default function Inbox() {
                   <h2 className="text-lg font-bold text-slate-800">{activeChat.contacts?.name || 'Unknown'}</h2>
                   <p className="text-slate-500 text-sm font-mono">{activeChat.contacts?.phone_number}</p>
                 </div>
+                
+                <div>
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Tags</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="px-2 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-md border border-indigo-100">Sales</span>
+                    <span className="px-2 py-1 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-md border border-slate-200 flex items-center space-x-1 cursor-pointer hover:bg-slate-200">
+                      <Plus size={10} />
+                      <span>Add Tag</span>
+                    </span>
+                  </div>
+                </div>
+
                 <div>
                   <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Quick Actions</h3>
                   <div className="grid grid-cols-2 gap-2">
@@ -442,6 +515,51 @@ export default function Inbox() {
             ) : (
               <ContactNotes contactId={activeChat.id} />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* New Chat Modal */}
+      {isNewChatModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100">
+            <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+              <h2 className="text-2xl font-extrabold text-slate-900">New Conversation</h2>
+              <button onClick={() => setIsNewChatModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateChat} className="p-8 space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Phone Number</label>
+                <input 
+                  type="tel" 
+                  required
+                  value={newChatPhone}
+                  onChange={(e) => setNewChatPhone(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                  placeholder="+1234567890"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Customer Name (Optional)</label>
+                <input 
+                  type="text" 
+                  value={newChatName}
+                  onChange={(e) => setNewChatName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="Jane Doe"
+                />
+              </div>
+              <button 
+                type="submit" 
+                disabled={isCreatingChat || !newChatPhone.trim()}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-100 flex items-center justify-center space-x-2"
+              >
+                {isCreatingChat ? <Loader2 className="animate-spin" size={20} /> : <MessageSquarePlus size={20} />}
+                <span>Start Chatting</span>
+              </button>
+            </form>
           </div>
         </div>
       )}
