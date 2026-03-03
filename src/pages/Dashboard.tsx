@@ -15,57 +15,71 @@ export default function Dashboard() {
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const fetchDashboardData = async () => {
+    try {
+      // Stats
+      const { count: myOpen } = await supabase
+        .from('chats')
+        .select('*', { count: 'exact', head: true })
+        .eq('assigned_to', user?.id)
+        .eq('status', 'open');
+
+      const { count: teamUnread } = await supabase
+        .from('chats')
+        .select('*', { count: 'exact', head: true })
+        .gt('unread_count', 0);
+
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const { count: todayResolved } = await supabase
+        .from('chats')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'resolved')
+        .gte('updated_at', today.toISOString());
+
+      setStats({
+        myOpen: myOpen || 0,
+        teamUnread: teamUnread || 0,
+        todayResolved: todayResolved || 0
+      });
+
+      // Recent Activity (Last 5 messages)
+      const { data: events } = await supabase
+        .from('messages')
+        .select(`
+          id, content, created_at, sender_type,
+          chats (
+            contacts (name, phone_number)
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      
+      setRecentEvents(events || []);
+
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        // Stats
-        const { count: myOpen } = await supabase
-          .from('chats')
-          .select('*', { count: 'exact', head: true })
-          .eq('assigned_to', user?.id)
-          .eq('status', 'open');
-
-        const { count: teamUnread } = await supabase
-          .from('chats')
-          .select('*', { count: 'exact', head: true })
-          .gt('unread_count', 0);
-
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const { count: todayResolved } = await supabase
-          .from('chats')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'resolved')
-          .gte('updated_at', today.toISOString());
-
-        setStats({
-          myOpen: myOpen || 0,
-          teamUnread: teamUnread || 0,
-          todayResolved: todayResolved || 0
-        });
-
-        // Recent Activity (Last 5 messages)
-        const { data: events } = await supabase
-          .from('messages')
-          .select(`
-            id, content, created_at, sender_type,
-            chats (
-              contacts (name, phone_number)
-            )
-          `)
-          .order('created_at', { ascending: false })
-          .limit(5);
-        
-        setRecentEvents(events || []);
-
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchDashboardData();
+
+    // Subscribe to real-time changes for messages and chats
+    const channel = supabase.channel('dashboard-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
+        fetchDashboardData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => {
+        fetchDashboardData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   if (loading) {
