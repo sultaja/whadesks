@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare, Zap, RefreshCcw, UserPlus, Image as ImageIcon, File as FileIcon, Tag, Plus, X } from 'lucide-react';
+import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare, Zap, RefreshCcw, UserPlus, Image as ImageIcon, File as FileIcon, Tag, Plus, X, Check, CheckCheck, Filter } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/AuthProvider';
 import { showSuccess, showError } from '@/utils/toast';
@@ -22,7 +22,8 @@ export default function Inbox() {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [rightTab, setRightTab] = useState<'info' | 'notes'>('info');
-  const [inboxFilter, setInboxFilter] = useState<'all' | 'mine'>('mine');
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'mine' | 'unassigned'>('mine');
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -57,9 +58,7 @@ export default function Inbox() {
       setChats(data || []);
       
       if (data && data.length > 0 && !activeChat) {
-        const initial = inboxFilter === 'mine' 
-          ? data.find(c => c.assigned_to === user?.id) || data[0]
-          : data[0];
+        const initial = data.find(c => c.assigned_to === user?.id) || data[0];
         setActiveChat(initial);
       }
     } catch (error: any) {
@@ -239,7 +238,7 @@ export default function Inbox() {
     fetchAgents();
     fetchQuickReplies();
 
-    const channel = supabase.channel('public-changes-v9')
+    const channel = supabase.channel('public-changes-v10')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
         if (activeChat) fetchMessages(activeChat.id);
         fetchChats();
@@ -317,8 +316,18 @@ export default function Inbox() {
     const nameMatch = chat.contacts?.name?.toLowerCase().includes(term);
     const phoneMatch = chat.contacts?.phone_number?.toLowerCase().includes(term);
     const passesSearch = (nameMatch || phoneMatch);
-    const passesFilter = inboxFilter === 'all' || chat.assigned_to === user?.id;
-    return passesSearch && passesFilter && chat.status === 'open';
+    
+    let passesFilter = true;
+    if (inboxFilter === 'mine') passesFilter = chat.assigned_to === user?.id;
+    else if (inboxFilter === 'unassigned') passesFilter = !chat.assigned_to;
+    
+    let passesTag = true;
+    if (tagFilter) {
+      const contactTagsList = contactTags[chat.contacts.id] || [];
+      passesTag = contactTagsList.includes(tagFilter);
+    }
+
+    return passesSearch && passesFilter && passesTag && chat.status === 'open';
   });
 
   const renderMessageContent = (content: string) => {
@@ -368,26 +377,52 @@ export default function Inbox() {
           <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-lg">
             <button 
               onClick={() => setInboxFilter('mine')}
-              className={`flex-1 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all ${inboxFilter === 'mine' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              className={`flex-1 text-[9px] font-bold px-1 py-1.5 rounded-md transition-all ${inboxFilter === 'mine' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
             >
               Mine
             </button>
             <button 
+              onClick={() => setInboxFilter('unassigned')}
+              className={`flex-1 text-[9px] font-bold px-1 py-1.5 rounded-md transition-all ${inboxFilter === 'unassigned' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+            >
+              Unassigned
+            </button>
+            <button 
               onClick={() => setInboxFilter('all')}
-              className={`flex-1 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all ${inboxFilter === 'all' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              className={`flex-1 text-[9px] font-bold px-1 py-1.5 rounded-md transition-all ${inboxFilter === 'all' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
             >
               All
             </button>
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search chats..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm dark:text-white"
-            />
+          
+          <div className="flex items-center space-x-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Search..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs dark:text-white"
+              />
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger className={`p-2 rounded-xl border transition-all ${tagFilter ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'}`}>
+                <Filter size={16} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-40 rounded-xl border-slate-200 dark:border-slate-800 shadow-xl dark:bg-slate-900">
+                <p className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Filter by Tag</p>
+                <DropdownMenuItem onClick={() => setTagFilter(null)} className="px-3 py-2 cursor-pointer dark:hover:bg-slate-800 text-xs">
+                  All Tags
+                </DropdownMenuItem>
+                {tags.map(tag => (
+                  <DropdownMenuItem key={tag} onClick={() => setTagFilter(tag)} className="px-3 py-2 cursor-pointer dark:hover:bg-slate-800 text-xs flex items-center justify-between">
+                    <span>{tag}</span>
+                    {tagFilter === tag && <Check size={12} className="text-indigo-600" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -419,6 +454,9 @@ export default function Inbox() {
               </div>
             </div>
           ))}
+          {filteredChats.length === 0 && (
+            <div className="text-center py-10 text-slate-400 text-xs italic">No conversations found</div>
+          )}
         </div>
       </div>
 
@@ -468,7 +506,10 @@ export default function Inbox() {
                   <div key={msg.id} className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[70%] rounded-2xl px-5 py-3 shadow-sm ${isAgent ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-sm'}`}>
                       {renderMessageContent(msg.content)}
-                      <div className={`text-[9px] mt-1 text-right ${isAgent ? 'text-indigo-200' : 'text-slate-400 dark:text-slate-500'}`}>{formatTime(msg.created_at)}</div>
+                      <div className={`flex items-center justify-end space-x-1 text-[9px] mt-1 ${isAgent ? 'text-indigo-200' : 'text-slate-400 dark:text-slate-500'}`}>
+                        <span>{formatTime(msg.created_at)}</span>
+                        {isAgent && <CheckCheck size={12} className="text-indigo-300" />}
+                      </div>
                     </div>
                   </div>
                 );
