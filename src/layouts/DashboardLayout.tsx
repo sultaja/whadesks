@@ -1,17 +1,20 @@
 import React from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import { MessageSquare, BarChart2, Users, Settings, LogOut, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
 
 const DashboardLayout = () => {
-  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
 
-  const handleLogout = () => {
-    navigate('/');
+  const handleLogout = async () => {
+    await signOut();
   };
+
+  const initial = user?.email ? user.email.charAt(0).toUpperCase() : 'A';
+  const displayName = user?.email ? user.email.split('@')[0] : 'Agent';
 
   return (
     <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans">
-      {/* Sidebar */}
       <aside className="w-64 bg-indigo-900 text-indigo-50 flex flex-col justify-between rounded-r-3xl my-2 ml-2 shadow-xl border border-indigo-800 relative z-20">
         <div>
           <div className="p-6 flex items-center space-x-3 mb-6">
@@ -34,9 +37,6 @@ const DashboardLayout = () => {
             >
               <MessageSquare size={20} />
               <span className="font-medium">Inbox</span>
-              <span className="ml-auto bg-indigo-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                5
-              </span>
             </NavLink>
 
             <NavLink
@@ -90,12 +90,12 @@ const DashboardLayout = () => {
           </button>
           
           <div className="bg-indigo-800/50 rounded-2xl p-4 flex items-center space-x-3 mt-4 border border-indigo-700">
-            <div className="w-10 h-10 rounded-full bg-indigo-400 flex items-center justify-center text-white font-bold text-lg shadow-inner">
-              A
+            <div className="w-10 h-10 rounded-full bg-indigo-400 flex items-center justify-center text-white font-bold text-lg shadow-inner uppercase">
+              {initial}
             </div>
             <div className="flex-1 overflow-hidden">
-              <p className="text-sm font-semibold text-white truncate">Agent Sarah</p>
-              <p className="text-xs text-indigo-300 truncate">sarah@whadesk.com</p>
+              <p className="text-sm font-semibold text-white truncate capitalize">{displayName}</p>
+              <p className="text-xs text-indigo-300 truncate">{user?.email}</p>
             </div>
             <button onClick={handleLogout} className="text-indigo-300 hover:text-white p-1 rounded-lg hover:bg-indigo-700 transition-colors">
               <LogOut size={18} />
@@ -104,7 +104,6 @@ const DashboardLayout = () => {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
         <Outlet />
       </main>

@@ -8,8 +8,24 @@ import Login from "./pages/Login";
 import Inbox from "./pages/Inbox";
 import Stats from "./pages/Stats";
 import NotFound from "./pages/NotFound";
+import { AuthProvider } from "./components/AuthProvider";
 
 const queryClient = new QueryClient();
+
+const AppRoutes = () => {
+  return (
+    <Routes>
+      <Route path="/" element={<Login />} />
+      <Route path="/app" element={<DashboardLayout />}>
+        <Route index element={<Navigate to="/app/inbox" replace />} />
+        <Route path="inbox" element={<Inbox />} />
+        <Route path="stats" element={<Stats />} />
+        <Route path="*" element={<div className="p-8 text-slate-500">Feature coming soon...</div>} />
+      </Route>
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -17,21 +33,9 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          {/* Public Login Route */}
-          <Route path="/" element={<Login />} />
-          
-          {/* Protected App Routes */}
-          <Route path="/app" element={<DashboardLayout />}>
-            <Route index element={<Navigate to="/app/inbox" replace />} />
-            <Route path="inbox" element={<Inbox />} />
-            <Route path="stats" element={<Stats />} />
-            {/* Fallbacks for other sidebar items */}
-            <Route path="*" element={<div className="p-8 text-slate-500">Feature coming soon...</div>} />
-          </Route>
-
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
