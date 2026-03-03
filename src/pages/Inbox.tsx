@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare, Zap } from 'lucide-react';
+import { Search, Send, Paperclip, Ban, CheckCircle, Clock, UserCheck, MessageSquarePlus, Loader2, ChevronDown, StickyNote, MessageSquare, Zap, RefreshCcw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/components/AuthProvider';
 import { showSuccess, showError } from '@/utils/toast';
@@ -88,12 +88,45 @@ export default function Inbox() {
     }
   };
 
+  const simulateCustomerReply = async () => {
+    if (!activeChat) return;
+    try {
+      const replies = [
+        "That sounds great, thanks!",
+        "Can you help me with something else?",
+        "When will my order arrive?",
+        "I'm not sure I understand.",
+        "Perfect, I'll wait for your update."
+      ];
+      const randomMsg = replies[Math.floor(Math.random() * replies.length)];
+      
+      const { error } = await supabase.from('messages').insert({
+        chat_id: activeChat.id,
+        content: randomMsg,
+        sender_type: 'customer'
+      });
+      if (error) throw error;
+
+      await supabase.from('chats')
+        .update({ 
+          updated_at: new Date().toISOString(),
+          unread_count: (activeChat.unread_count || 0) + 1
+        })
+        .eq('id', activeChat.id);
+
+      showSuccess("Simulated incoming message");
+      fetchMessages(activeChat.id);
+    } catch (err) {
+      showError("Simulation failed");
+    }
+  };
+
   useEffect(() => {
     fetchChats();
     fetchAgents();
     fetchQuickReplies();
 
-    const channel = supabase.channel('public-changes-v3')
+    const channel = supabase.channel('public-changes-v4')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
         if (activeChat) fetchMessages(activeChat.id);
         fetchChats();
@@ -178,31 +211,6 @@ export default function Inbox() {
       fetchChats();
     } catch (err: any) {
       showError('Failed to update chat status');
-    }
-  };
-
-  const toggleBlockStatus = async () => {
-    if (!activeChat) return;
-    const newBlockedState = !activeChat.contacts.is_blocked;
-    
-    try {
-      const { error } = await supabase
-        .from('contacts')
-        .update({ is_blocked: newBlockedState })
-        .eq('id', activeChat.contacts.id);
-        
-      if (error) throw error;
-      showSuccess(newBlockedState ? 'Contact blocked' : 'Contact unblocked');
-      
-      const updatedChat = {
-        ...activeChat,
-        contacts: { ...activeChat.contacts, is_blocked: newBlockedState }
-      };
-      
-      setActiveChat(updatedChat);
-      setChats(prev => prev.map(c => c.id === updatedChat.id ? updatedChat : c));
-    } catch (err) {
-      showError('Failed to update contact status');
     }
   };
 
@@ -306,6 +314,13 @@ export default function Inbox() {
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Online via WhatsApp</p>
               </div>
             </div>
+            <button 
+              onClick={simulateCustomerReply}
+              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+              title="Simulate incoming reply"
+            >
+              <RefreshCcw size={18} />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">

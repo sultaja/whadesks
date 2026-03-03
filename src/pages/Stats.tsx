@@ -26,6 +26,7 @@ const Stats = () => {
 
     const fetchStats = async () => {
       try {
+        // Fetch raw counts
         const { count: msgCount } = await supabase.from('messages').select('*', { count: 'exact', head: true });
         const { count: resolvedCount } = await supabase.from('chats').select('*', { count: 'exact', head: true }).eq('status', 'resolved');
         const { count: agentsCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
@@ -36,6 +37,7 @@ const Stats = () => {
           activeAgents: agentsCount || 0,
         });
 
+        // Generate chart data for last 7 days
         const sevenDaysAgo = subDays(new Date(), 7);
         const { data: recentMessages } = await supabase.from('messages').select('created_at').gte('created_at', sevenDaysAgo.toISOString());
         const { data: recentChats } = await supabase.from('chats').select('updated_at').gte('updated_at', sevenDaysAgo.toISOString()).eq('status', 'resolved');
@@ -64,6 +66,7 @@ const Stats = () => {
 
         setChartData(days);
 
+        // Top Performers Logic
         const { data: chatsWithAgents } = await supabase.from('chats').select('assigned_to, profiles(first_name)').not('assigned_to', 'is', null);
         const agentCounts: Record<string, number> = {};
         chatsWithAgents?.forEach(c => {
@@ -71,7 +74,11 @@ const Stats = () => {
           agentCounts[name] = (agentCounts[name] || 0) + 1;
         });
 
-        const formattedAgentData = Object.entries(agentCounts).map(([name, chats]) => ({ name, chats })).sort((a, b) => b.chats - a.chats).slice(0, 5);
+        const formattedAgentData = Object.entries(agentCounts)
+          .map(([name, chats]) => ({ name, chats }))
+          .sort((a, b) => b.chats - a.chats)
+          .slice(0, 5);
+        
         setAgentData(formattedAgentData);
 
       } catch (error) {
@@ -119,6 +126,7 @@ const Stats = () => {
           </div>
         </div>
 
+        {/* Summary Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard icon={<MessageSquare />} title="Total Messages" value={stats.totalMessages.toLocaleString()} color="indigo" />
           <StatCard icon={<CheckCircle />} title="Resolved Chats" value={stats.resolvedChats.toLocaleString()} color="green" />
@@ -127,6 +135,7 @@ const Stats = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Volume Chart */}
           <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
             <h3 className="text-lg font-bold text-slate-800 mb-6">Volume vs Resolution</h3>
             <div className="h-80">
@@ -143,6 +152,7 @@ const Stats = () => {
             </div>
           </div>
 
+          {/* Top Agents Chart */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
             <h3 className="text-lg font-bold text-slate-800 mb-6">Top Performers</h3>
             <div className="h-80">
