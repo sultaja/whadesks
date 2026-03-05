@@ -12,6 +12,18 @@ dist
 dist-ssr
 *.local
 
+# Environment / secrets – NEVER commit these
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# WhatsApp session data
+backend/.wwebjs_auth/
+backend/.wwebjs_cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

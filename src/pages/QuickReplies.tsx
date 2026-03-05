@@ -139,7 +139,7 @@ export default function QuickReplies() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredReplies.map((reply) => (
-            <div key={reply.id} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all group relative">
+            <div key={reply.id} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all relative">
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center space-x-3">
                   <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600">
@@ -153,11 +153,11 @@ export default function QuickReplies() {
                   </div>
                 </div>
                 {isAdmin && (
-                  <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => openEdit(reply)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg">
+                  <div className="flex space-x-1">
+                    <button onClick={() => openEdit(reply)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Edit">
                       <Edit2 size={16} />
                     </button>
-                    <button onClick={() => handleDelete(reply.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                    <button onClick={() => handleDelete(reply.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                       <Trash2 size={16} />
                     </button>
                   </div>
