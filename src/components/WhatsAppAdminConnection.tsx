@@ -11,7 +11,12 @@ export const WhatsAppAdminConnection = () => {
 
     useEffect(() => {
         // Connect to the backend
-        const newSocket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001');
+        const newSocket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001', {
+          transports: ['polling', 'websocket'],
+          upgrade: true,
+          reconnectionAttempts: 10,
+          timeout: 30000,
+        });
         setSocket(newSocket);
 
         newSocket.on('connect', () => {

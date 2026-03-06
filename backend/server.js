@@ -10,23 +10,7 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const server = http.createServer(app);
 
-// Allow the Vercel frontend (or any configured origin) + localhost for dev
-const FRONTEND_URL = process.env.FRONTEND_URL || '';
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  ...(FRONTEND_URL ? [FRONTEND_URL] : []),
-];
-app.use(cors({
-  origin: (origin, cb) => {
-    // allow requests with no origin (curl, Postman, server-to-server)
-    if (!origin) return cb(null, true);
-    if (allowedOrigins.includes(origin) || !FRONTEND_URL) return cb(null, true);
-    cb(new Error(`CORS: origin ${origin} not allowed`));
-  },
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  credentials: true,
-}));
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }));
 app.use(express.json({ limit: '50mb' }));
 
 // Health check endpoint (used by Railway and other platforms)
@@ -48,15 +32,12 @@ if (!hasServiceRole) {
 }
 
 const io = new Server(server, {
-  cors: {
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin) || !FRONTEND_URL) return cb(null, true);
-      cb(new Error(`CORS: origin ${origin} not allowed`));
-    },
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+  // Allow long-polling as a fallback so Render's reverse proxy doesn't block connections
+  transports: ['polling', 'websocket'],
+  allowUpgrades: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 // Puppeteer executable path can be overridden via env var (e.g. Railway system Chromium)

@@ -268,7 +268,13 @@ export default function Inbox() {
   // ── Socket.io ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const sock = io(WA_BACKEND);
+    const sock = io(WA_BACKEND, {
+      transports: ['polling', 'websocket'],
+      upgrade: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+      timeout: 30000,
+    });
     setSocket(sock);
     sock.on('connect', () => { });
     sock.on('disconnect', () => setWaReady(false));
