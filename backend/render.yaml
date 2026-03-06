@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: whadesk-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: WA_SESSION_PATH
+        value: /opt/render/project/.wwebjs_auth
