@@ -19,7 +19,7 @@ import {
 } from 'date-fns';
 import { useProfile } from '@/hooks/use-profile';
 
-const WA_BACKEND = 'http://localhost:3001';
+const WA_BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
