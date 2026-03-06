@@ -1,0 +1,35 @@
+# Railway/Nixpacks build config for the WhatsApp backend
+# Installs Chromium system libraries required by Puppeteer / whatsapp-web.js
+
+[phases.setup]
+nixPkgs = [
+  "nodejs_20",
+  "chromium",
+  "nss",
+  "nspr",
+  "atk",
+  "cups",
+  "dbus",
+  "expat",
+  "libdrm",
+  "mesa",
+  "pango",
+  "cairo",
+  "glib",
+  "xorg.libX11",
+  "xorg.libXcomposite",
+  "xorg.libXdamage",
+  "xorg.libXext",
+  "xorg.libXfixes",
+  "xorg.libXrandr",
+  "xorg.libxshmfence",
+  "xorg.libXScrnSaver",
+  "libxkbcommon",
+  "alsa-lib",
+]
+
+[phases.install]
+cmds = ["npm install"]
+
+[start]
+cmd = "node server.js"

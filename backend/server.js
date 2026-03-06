@@ -10,8 +10,29 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors());
-app.use(express.json());
+// Allow the Vercel frontend (or any configured origin) + localhost for dev
+const FRONTEND_URL = process.env.FRONTEND_URL || '';
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  ...(FRONTEND_URL ? [FRONTEND_URL] : []),
+];
+app.use(cors({
+  origin: (origin, cb) => {
+    // allow requests with no origin (curl, Postman, server-to-server)
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin) || !FRONTEND_URL) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true,
+}));
+app.use(express.json({ limit: '50mb' }));
+
+// Health check endpoint (used by Railway and other platforms)
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', waReady: isReady, timestamp: new Date().toISOString() });
+});
 
 // Supabase client
 // Use SUPABASE_SERVICE_ROLE_KEY env var (bypasses RLS) for full backend persistence.
@@ -27,14 +48,36 @@ if (!hasServiceRole) {
 }
 
 const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: {
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin) || !FRONTEND_URL) return cb(null, true);
+      cb(new Error(`CORS: origin ${origin} not allowed`));
+    },
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
 });
 
+// Puppeteer executable path can be overridden via env var (e.g. Railway system Chromium)
+const puppeteerArgs = [
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-dev-shm-usage',   // critical in containers where /dev/shm is small
+  '--disable-accelerated-2d-canvas',
+  '--disable-gpu',
+  '--no-first-run',
+  '--no-zygote',
+  '--single-process',           // reduces memory usage in cloud envs
+  '--disable-extensions',
+];
+
 const client = new Client({
-  authStrategy: new LocalAuth(),
+  authStrategy: new LocalAuth({ dataPath: process.env.WA_SESSION_PATH || './.wwebjs_auth' }),
   puppeteer: {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    args: puppeteerArgs,
   },
 });
 
