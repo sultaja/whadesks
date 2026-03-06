@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Lockfiles – only keep package-lock.json (npm), remove pnpm/yarn lockfiles
+pnpm-lock.yaml
+yarn.lock
+
 # Environment / secrets – NEVER commit these
 .env
 .env.*
