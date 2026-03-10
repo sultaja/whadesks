@@ -11,6 +11,23 @@ import { WhatsAppAdminConnection } from '@/components/WhatsAppAdminConnection';
 
 const WA_BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
+/** Safe fetch → always returns parsed JSON or throws a readable error */
+async function safeFetch(url: string, opts?: RequestInit) {
+  const resp = await fetch(url, opts);
+  const ct = resp.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    const text = await resp.text();
+    throw new Error(
+      resp.ok
+        ? `Unexpected response (not JSON): ${text.slice(0, 120)}`
+        : `Backend error ${resp.status}: ${text.slice(0, 120)}`
+    );
+  }
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || `Request failed (${resp.status})`);
+  return data;
+}
+
 type Tab = 'profile' | 'whatsapp' | 'team' | 'data';
 
 interface TeamMember {
@@ -84,9 +101,7 @@ export default function Settings() {
     setLoadingTeam(true);
     setTeamError(null);
     try {
-      const resp = await fetch(`${WA_BACKEND}/api/team/members`);
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error);
+      const data = await safeFetch(`${WA_BACKEND}/api/team/members`);
       setTeamMembers(data.members || []);
     } catch (err: any) {
       setTeamError(err.message);
@@ -104,13 +119,11 @@ export default function Settings() {
     if (!inviteForm.email || !inviteForm.password) return;
     setIsInviting(true);
     try {
-      const resp = await fetch(`${WA_BACKEND}/api/team/members`, {
+      await safeFetch(`${WA_BACKEND}/api/team/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inviteForm),
       });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error);
       showSuccess(`${inviteForm.email} added to the team`);
       setInviteForm({ email: '', first_name: '', last_name: '', password: '', role: 'agent' });
       setShowInviteForm(false);
@@ -122,13 +135,11 @@ export default function Settings() {
   const handleUpdateRole = async (memberId: string, newRole: string) => {
     setUpdatingRoleId(memberId);
     try {
-      const resp = await fetch(`${WA_BACKEND}/api/team/members/${memberId}/role`, {
+      await safeFetch(`${WA_BACKEND}/api/team/members/${memberId}/role`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole }),
       });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error);
       setTeamMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m));
       showSuccess('Role updated');
     } catch (err: any) { showError(err.message); }
@@ -139,9 +150,7 @@ export default function Settings() {
     if (!confirm(`Remove ${member.email} from the team? This action cannot be undone.`)) return;
     setDeletingId(member.id);
     try {
-      const resp = await fetch(`${WA_BACKEND}/api/team/members/${member.id}`, { method: 'DELETE' });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error);
+      await safeFetch(`${WA_BACKEND}/api/team/members/${member.id}`, { method: 'DELETE' });
       setTeamMembers(prev => prev.filter(m => m.id !== member.id));
       showSuccess(`${member.email} removed`);
     } catch (err: any) { showError(err.message); }
@@ -157,9 +166,7 @@ export default function Settings() {
   const handleClearStorage = async () => {
     setClearing(true);
     try {
-      const resp = await fetch(`${WA_BACKEND}/api/admin/clear-storage`, { method: 'POST' });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error);
+      await safeFetch(`${WA_BACKEND}/api/admin/clear-storage`, { method: 'POST' });
       showSuccess('Bütün məlumatlar silindi');
       setClearConfirm(false);
     } catch (err: any) {
@@ -563,11 +570,12 @@ export default function Settings() {
                 {/* Info box */}
                 <div className="flex items-start gap-3 p-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40">
                   <AlertTriangle size={16} className="text-blue-500 shrink-0 mt-0.5" />
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
-                    <strong>Qeyd:</strong> Bu əməliyyat yalnız platformanın Supabase bazasındakı məlumatları silir.
+                  <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+                    <p><strong>Qeyd:</strong> Bu əməliyyat yalnız platformanın Supabase bazasındakı məlumatları silir.
                     Həqiqi WhatsApp-dakı mesajlara, kontaktlara heç bir təsir etmir.
-                    Team üzvləri, Quick Replies və profil məlumatları silinmir.
-                  </p>
+                    Team üzvləri, Quick Replies və profil məlumatları silinmir.</p>
+                    <p className="text-xs opacity-70 font-mono break-all">Backend: {WA_BACKEND}</p>
+                  </div>
                 </div>
               </div>
             )}
