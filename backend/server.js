@@ -764,6 +764,28 @@ client.on('message_create', async (msg) => {
   });
 });
 
+// ─── Admin: Clear all storage (messages, chats, contacts) ───────────────────
+
+app.post('/api/admin/clear-storage', async (_req, res) => {
+  if (!hasServiceRole) {
+    return res.status(503).json({ error: 'Service role key not configured. Cannot clear storage.' });
+  }
+  try {
+    // Order matters due to foreign key constraints: messages → chats → contacts
+    const { error: msgErr }  = await supabase.from('messages').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (msgErr) throw msgErr;
+    const { error: chatErr } = await supabase.from('chats').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (chatErr) throw chatErr;
+    const { error: conErr }  = await supabase.from('contacts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (conErr) throw conErr;
+    console.log('[Admin] Storage cleared — messages, chats and contacts deleted.');
+    res.json({ success: true, message: 'All messages, chats and contacts have been deleted from storage.' });
+  } catch (err) {
+    console.error('[Admin] clear-storage error:', err);
+    res.status(500).json({ error: err.message || 'Failed to clear storage.' });
+  }
+});
+
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 client.initialize();
