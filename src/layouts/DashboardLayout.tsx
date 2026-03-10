@@ -1,12 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   MessageSquare, BarChart2, Users, Settings, LogOut, Zap, UserSquare2,
   Home, Menu, X, CheckCircle, Clock, Moon, Sun, ChevronLeft, ChevronRight,
+  Power, Loader2, Wifi, WifiOff,
 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useProfile } from '@/hooks/use-profile';
 import { useIsMobile } from '@/hooks/use-mobile';
+
+const WA_BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+
+type BackendStatus = 'unknown' | 'waking' | 'online' | 'offline';
+
+const useBackendStatus = () => {
+  const [status, setStatus] = useState<BackendStatus>('unknown');
+
+  const check = useCallback(async (wake = false) => {
+    setStatus('waking');
+    try {
+      const res = await fetch(`${WA_BACKEND}/health`, { signal: AbortSignal.timeout(30000) });
+      if (res.ok) setStatus('online');
+      else setStatus('offline');
+    } catch {
+      setStatus(wake ? 'offline' : 'offline');
+    }
+  }, []);
+
+  useEffect(() => { check(); }, [check]);
+
+  return { status, wake: () => check(true) };
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,6 +53,7 @@ const DashboardLayout = () => {
     localStorage.getItem('nav-collapsed') === 'true'
   );
   const [isDark, setIsDark] = useState(false);
+  const { status: backendStatus, wake } = useBackendStatus();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark);
@@ -210,6 +235,71 @@ const DashboardLayout = () => {
               >
                 {isDark ? <Sun size={14} /> : <Moon size={14} />}
               </button>
+            </div>
+          )}
+
+          {/* Backend status widget */}
+          {isCollapsed && !isMobile ? (
+            <button
+              onClick={wake}
+              disabled={backendStatus === 'waking'}
+              title={
+                backendStatus === 'online'  ? 'Backend: Yandı ✓' :
+                backendStatus === 'waking'  ? 'Oyanır...' :
+                backendStatus === 'offline' ? 'Backend: Yatır — oyandırmaq üçün klik et' :
+                'Backend statusunu yoxla'
+              }
+              className={`w-full flex justify-center p-3 rounded-2xl transition-all
+                ${backendStatus === 'online'  ? 'bg-emerald-600/30 text-emerald-400 hover:bg-emerald-600/50' :
+                  backendStatus === 'waking'  ? 'bg-yellow-600/20 text-yellow-400 cursor-wait' :
+                  backendStatus === 'offline' ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30' :
+                  'bg-indigo-800/40 text-indigo-300 hover:bg-indigo-700'}`}
+            >
+              {backendStatus === 'waking'  ? <Loader2 size={16} className="animate-spin" /> :
+               backendStatus === 'online'  ? <Wifi size={16} /> :
+               backendStatus === 'offline' ? <WifiOff size={16} /> :
+               <Power size={16} />}
+            </button>
+          ) : (
+            <div className={`flex items-center justify-between px-3 py-2 rounded-2xl border transition-all
+              ${backendStatus === 'online'  ? 'bg-emerald-600/15 border-emerald-600/30' :
+                backendStatus === 'waking'  ? 'bg-yellow-600/10 border-yellow-600/20' :
+                backendStatus === 'offline' ? 'bg-red-600/10 border-red-600/20' :
+                'bg-indigo-800/30 border-indigo-700/30'}`}>
+              <div className="flex items-center space-x-2 min-w-0">
+                {backendStatus === 'waking' ? (
+                  <Loader2 size={13} className="animate-spin text-yellow-400 shrink-0" />
+                ) : backendStatus === 'online' ? (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                ) : backendStatus === 'offline' ? (
+                  <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+                )}
+                <span className={`text-[10px] font-black uppercase tracking-widest truncate
+                  ${backendStatus === 'online'  ? 'text-emerald-400' :
+                    backendStatus === 'waking'  ? 'text-yellow-400' :
+                    backendStatus === 'offline' ? 'text-red-400' :
+                    'text-indigo-300'}`}>
+                  {backendStatus === 'online'  ? 'Backend: Yandı ✓' :
+                   backendStatus === 'waking'  ? 'Oyanır...' :
+                   backendStatus === 'offline' ? 'Backend: Yatır' :
+                   'Backend: Yoxlanır'}
+                </span>
+              </div>
+              {backendStatus !== 'online' && (
+                <button
+                  onClick={wake}
+                  disabled={backendStatus === 'waking'}
+                  title="Backendi oyandır"
+                  className={`shrink-0 ml-1 p-1.5 rounded-xl transition-all
+                    ${backendStatus === 'waking'
+                      ? 'text-yellow-400 cursor-wait'
+                      : 'text-indigo-300 hover:text-white hover:bg-indigo-700'}`}
+                >
+                  <Power size={13} />
+                </button>
+              )}
             </div>
           )}
 
